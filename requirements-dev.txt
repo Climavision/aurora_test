@@ -1,0 +1,6 @@
+black
+ipywidgets
+jupyter_contrib_nbextensions
+jupyterlab
+pre-commit
+ruff==0.4.1

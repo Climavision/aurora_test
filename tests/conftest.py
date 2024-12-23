@@ -64,10 +64,79 @@ def test_input_output() -> Generator[tuple[Batch, SavedBatch], None, None]:
     batch = Batch(
         surf_vars={k: torch.from_numpy(v) for k, v in test_input["surf_vars"].items()},
         static_vars={k: torch.from_numpy(v) for k, v in static_vars.items()},
-        atmos_vars={k: torch.from_numpy(v) for k, v in test_input["atmos_vars"].items()},
+        atmos_vars={
+            k: torch.from_numpy(v) for k, v in test_input["atmos_vars"].items()
+        },
         metadata=Metadata(
             lat=torch.from_numpy(test_input["metadata"]["lat"]),
             lon=torch.from_numpy(test_input["metadata"]["lon"]),
+            atmos_levels=tuple(test_input["metadata"]["atmos_levels"]),
+            time=tuple(test_input["metadata"]["time"]),
+        ),
+    )
+
+    # Load test output.
+    path = hf_hub_download(
+        repo_id="microsoft/aurora",
+        filename="aurora-0.25-small-pretrained-test-output.pickle",
+    )
+    with open(path, "rb") as f:
+        test_output: SavedBatch = pickle.load(f)
+
+    yield batch, test_output
+
+
+@pytest.fixture()
+def test_input_output_full() -> Generator[tuple[Batch, SavedBatch], None, None]:
+    # Load test input.
+    path = hf_hub_download(
+        repo_id="microsoft/aurora",
+        filename="aurora-0.25-small-pretrained-test-input.pickle",
+    )
+    with open(path, "rb") as f:
+        test_input: SavedBatch = pickle.load(f)
+
+    # Load static variables.
+    path = hf_hub_download(
+        repo_id="microsoft/aurora",
+        filename="aurora-0.25-static.pickle",
+    )
+    with open(path, "rb") as f:
+        static_vars: dict[str, np.ndarray] = pickle.load(f)
+
+    new_lats = np.linspace(90, -90, static_vars["z"].shape[0])
+    new_lons = np.linspace(0, 360, static_vars["z"].shape[1], endpoint=False)
+
+    surf_vars = {
+        k: interpolate_numpy(
+            v,
+            test_input["metadata"]["lat"],
+            test_input["metadata"]["lon"],
+            new_lats,
+            new_lons,
+        )
+        for k, v in test_input["surf_vars"].items()
+    }
+
+    atmos_vars = {
+        k: interpolate_numpy(
+            v,
+            test_input["metadata"]["lat"],
+            test_input["metadata"]["lon"],
+            new_lats,
+            new_lons,
+        )
+        for k, v in test_input["atmos_vars"].items()
+    }
+
+    # Construct a proper batch from the test input.
+    batch = Batch(
+        surf_vars={k: torch.from_numpy(v) for k, v in surf_vars.items()},
+        static_vars={k: torch.from_numpy(v) for k, v in static_vars.items()},
+        atmos_vars={k: torch.from_numpy(v) for k, v in atmos_vars.items()},
+        metadata=Metadata(
+            lat=torch.from_numpy(new_lats),
+            lon=torch.from_numpy(new_lons),
             atmos_levels=tuple(test_input["metadata"]["atmos_levels"]),
             time=tuple(test_input["metadata"]["time"]),
         ),

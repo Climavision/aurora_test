@@ -1,0 +1,70 @@
+{
+	"build": {
+		"dockerfile": "./Dockerfile",
+		"context": ".."
+	},
+	"features": {
+		"ghcr.io/devcontainers/features/common-utils:2": {
+			"installZsh": "true",
+			"username": "vscode",
+			"userUid": "1000",
+			"userGid": "1000",
+			"upgradePackages": "true"
+		},
+		"ghcr.io/devcontainers/features/git:1": {
+			"version": "latest",
+			"ppa": "false"
+		}
+	},
+	"customizations": {
+		"vscode": {
+			"settings": {
+				"python.defaultInterpreterPath": "/opt/mambaforge/envs/Aurora/bin/python",
+				"editor.formatOnSave": true,
+				"[python]": {
+					"editor.defaultFormatter": "ms-python.black-formatter",
+					"editor.formatOnSave": true
+				},
+				"python.formatting.provider": "none",
+				"python.testing.pytestArgs": [
+					"tests"
+				],
+				"python.testing.unittestEnabled": false,
+				"python.testing.pytestEnabled": true,
+				"python.testing.cwd": "",
+				"python.analysis.typeCheckingMode": "basic"
+			},
+			"extensions": [
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"redhat.vscode-yaml",
+				"charliermarsh.ruff",
+				"tamasfe.even-better-toml",
+				"ms-python.black-formatter",
+				"ms-azuretools.vscode-docker",
+				"ty4z2008.html-preview",
+				"OctopusDeploy.vscode-octopusdeploy"
+			]
+		}
+	},
+	"forwardPorts": [
+		8888,
+		8889,
+		8085,
+		8265
+	],
+	"runArgs": [
+		"--gpus",
+		"all",
+		"--shm-size",
+		"64Gb",
+		"--cap-add",
+		"SYS_PTRACE",
+		"--network",
+		"host",
+		//"--env-file",
+		//".env"
+	],
+	"mounts": [],
+	"postCreateCommand": "pip install -e ."
+}

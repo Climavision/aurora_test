@@ -1,0 +1,24 @@
+name: Aurora
+channels:
+      - nvidia
+      - pytorch
+      - conda-forge
+      - defaults
+dependencies:
+      - build
+      - einops
+      - ghp-import
+      - huggingface_hub
+      - mypy
+      - netcdf4
+      - numpy
+      - pytorch
+      - scipy
+      - wheel
+      - xarray
+
+      - pip:
+              - pytest
+              - pytest-cov
+              - pytest-mock
+              - timm==0.6.13
