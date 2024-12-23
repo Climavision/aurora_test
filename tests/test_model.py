@@ -13,6 +13,14 @@ from tests.conftest import SavedBatch
 from aurora import Aurora, AuroraSmall, Batch
 
 
+def _prepare_model_for_inference(model: Aurora) -> Aurora:
+    model.backbone = model.backbone.to(torch.bfloat16)
+    model.autocast = True
+    model.eval()
+    model = model.cuda()
+    return model
+
+
 @pytest.fixture(scope="session")
 def aurora_full() -> Aurora:
     # model = AuroraSmall(use_lora=True)
@@ -22,35 +30,26 @@ def aurora_full() -> Aurora:
         "aurora-0.25-pretrained.ckpt",
         strict=False,  # LoRA parameters not available.
     )
-    model.backbone = model.backbone.to(torch.bfloat16)
-    model.autocast = True
-    model.eval()
-    return model
+    return _prepare_model_for_inference(model)
 
 
 def test_aurora_full(
     aurora_full: Aurora, test_input_output_full: tuple[Batch, SavedBatch]
 ) -> None:
     batch, test_output = test_input_output_full
-    try:
-        aurora_full = aurora_full.cuda()
 
-        with torch.inference_mode():
-            pred = aurora_full.forward(batch).to("cpu")
+    with torch.inference_mode():
+        pred = aurora_full.forward(batch).to("cpu")
 
-        def assert_approx_equality(
-            v_out: np.ndarray, v_ref: np.ndarray, tol: float
-        ) -> None:
-            err = np.abs(v_out - v_ref).mean()
-            mag = np.abs(v_ref).mean()
-            assert err / mag <= tol
+    def assert_approx_equality(
+        v_out: np.ndarray, v_ref: np.ndarray, tol: float
+    ) -> None:
+        err = np.abs(v_out - v_ref).mean()
+        mag = np.abs(v_ref).mean()
+        assert err / mag <= tol
 
-        assert pred.metadata.atmos_levels == tuple(
-            test_output["metadata"]["atmos_levels"]
-        )
-        assert pred.metadata.time == tuple(test_output["metadata"]["time"])
-    finally:
-        aurora_full = aurora_full.cpu()
+    assert pred.metadata.atmos_levels == tuple(test_output["metadata"]["atmos_levels"])
+    assert pred.metadata.time == tuple(test_output["metadata"]["time"])
 
 
 @pytest.fixture(scope="session")
@@ -61,69 +60,61 @@ def aurora_small() -> Aurora:
         "aurora-0.25-small-pretrained.ckpt",
         strict=False,  # LoRA parameters not available.
     )
-    model = model.double()
-    model.eval()
-    return model
+    return _prepare_model_for_inference(model)
 
 
 def test_aurora_small(
     aurora_small: Aurora, test_input_output: tuple[Batch, SavedBatch]
 ) -> None:
     batch, test_output = test_input_output
-    try:
-        aurora_small = aurora_small.cuda()
 
-        with torch.inference_mode():
-            pred = aurora_small.forward(batch).to("cpu")
+    with torch.inference_mode():
+        pred = aurora_small.forward(batch).to("cpu")
 
-        def assert_approx_equality(
-            v_out: np.ndarray, v_ref: np.ndarray, tol: float
-        ) -> None:
-            err = np.abs(v_out - v_ref).mean()
-            mag = np.abs(v_ref).mean()
-            assert err / mag <= tol
+    def assert_approx_equality(
+        v_out: np.ndarray, v_ref: np.ndarray, tol: float
+    ) -> None:
+        err = np.abs(v_out - v_ref).mean()
+        mag = np.abs(v_ref).mean()
+        assert err / mag <= tol
 
-        # For some reason, wind speed and specific humidity are more numerically unstable, so we use a
-        # higher tolerance of 0.5% there.
-        tolerances = {
-            "2t": 1e-4,
-            "10u": 5e-3,
-            "10v": 5e-3,
-            "msl": 1e-4,
-            "u": 5e-3,
-            "v": 5e-3,
-            "t": 1e-4,
-            "q": 5e-3,
-        }
+    # For some reason, wind speed and specific humidity are more numerically unstable, so we use a
+    # higher tolerance of 0.5% there.
+    tolerances = {
+        "2t": 1e-4,
+        "10u": 5e-3,
+        "10v": 5e-3,
+        "msl": 1e-4,
+        "u": 5e-3,
+        "v": 5e-3,
+        "t": 1e-4,
+        "q": 5e-3,
+    }
 
-        # Check the outputs.
-        for k in pred.surf_vars:
-            assert_approx_equality(
-                pred.surf_vars[k].numpy(),
-                test_output["surf_vars"][k],
-                tolerances[k],
-            )
-        for k in pred.static_vars:
-            assert_approx_equality(
-                pred.static_vars[k].numpy(),
-                batch.static_vars[k].numpy(),
-                1e-10,  # These should be exactly equal.
-            )
-        for k in pred.atmos_vars:
-            assert_approx_equality(
-                pred.atmos_vars[k].numpy(),
-                test_output["atmos_vars"][k],
-                tolerances[k],
-            )
-
-        np.testing.assert_allclose(pred.metadata.lon, test_output["metadata"]["lon"])
-        np.testing.assert_allclose(pred.metadata.lat, test_output["metadata"]["lat"])
-        assert pred.metadata.atmos_levels == tuple(
-            test_output["metadata"]["atmos_levels"]
+    # Check the outputs.
+    for k in pred.surf_vars:
+        assert_approx_equality(
+            pred.surf_vars[k].numpy(),
+            test_output["surf_vars"][k],
+            tolerances[k],
         )
-        assert pred.metadata.time == tuple(test_output["metadata"]["time"])
-    finally:
-        aurora_small = aurora_small.cpu()
+    for k in pred.static_vars:
+        assert_approx_equality(
+            pred.static_vars[k].numpy(),
+            batch.static_vars[k].numpy(),
+            1e-7,  # These should be exactly equal.
+        )
+    for k in pred.atmos_vars:
+        assert_approx_equality(
+            pred.atmos_vars[k].numpy(),
+            test_output["atmos_vars"][k],
+            tolerances[k],
+        )
+
+    np.testing.assert_allclose(pred.metadata.lon, test_output["metadata"]["lon"])
+    np.testing.assert_allclose(pred.metadata.lat, test_output["metadata"]["lat"])
+    assert pred.metadata.atmos_levels == tuple(test_output["metadata"]["atmos_levels"])
+    assert pred.metadata.time == tuple(test_output["metadata"]["time"])
 
 
 def test_aurora_small_ddp(
@@ -162,7 +153,7 @@ def test_aurora_small_lat_lon_matrices(
     batch, test_output = test_input_output
 
     with torch.inference_mode():
-        pred = aurora_small.forward(batch)
+        pred = aurora_small.forward(batch).to("cpu")
 
         # Modify the batch to have a latitude and longitude matrices.
         n_lat = len(batch.metadata.lat)
@@ -170,7 +161,7 @@ def test_aurora_small_lat_lon_matrices(
         batch.metadata.lat = batch.metadata.lat[:, None].expand(n_lat, n_lon)
         batch.metadata.lon = batch.metadata.lon[None, :].expand(n_lat, n_lon)
 
-        pred_matrix = aurora_small.forward(batch)
+        pred_matrix = aurora_small.forward(batch).to("cpu")
 
     # Check the outputs.
     for k in pred.surf_vars:
@@ -210,10 +201,9 @@ def test_aurora_small_flags(test_input_output: tuple[Batch, SavedBatch]) -> None
             "aurora-0.25-small-pretrained.ckpt",
             strict=False,  # LoRA parameters not available.
         )
-        model = model.double()
-        model.eval()
+        model = _prepare_model_for_inference(model)
         with torch.inference_mode():
-            preds.append(model.forward(batch).normalise(model.surf_stats))
+            preds.append(model.forward(batch).normalise(model.surf_stats).to("cpu"))
 
     # Check that all predictions are different.
     for i, pred1 in enumerate(preds):

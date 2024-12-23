@@ -6,6 +6,15 @@ import numpy as np
 import torch
 
 from aurora import AuroraSmall, Batch, Metadata, rollout
+from aurora.model.aurora import Aurora
+
+
+def _prepare_model_for_inference(model: Aurora) -> Aurora:
+    model.backbone = model.backbone.to(torch.bfloat16)
+    model.autocast = True
+    model.eval()
+    model = model.cuda()
+    return model
 
 
 def test_rollout():
@@ -17,7 +26,9 @@ def test_rollout():
         "aurora-0.25-small-pretrained.ckpt",
         strict=False,  # LoRA parameters not available.
     )
+    model1 = _prepare_model_for_inference(model1)
     model2 = AuroraSmall(use_lora=True, lora_mode="all")
+    model2 = _prepare_model_for_inference(model2)
 
     sd1 = model1.state_dict()
     sd2 = model2.state_dict()
@@ -60,10 +71,12 @@ def test_rollout():
     assert len(preds2) == steps
 
     for i in range(steps):
-        pred1 = preds1[i]
-        pred2 = preds2[i]
+        pred1 = preds1[i].to("cpu")
+        pred2 = preds2[i].to("cpu")
 
-        expected_time = tuple(t + (i + 1) * timedelta(hours=6) for t in batch.metadata.time)
+        expected_time = tuple(
+            t + (i + 1) * timedelta(hours=6) for t in batch.metadata.time
+        )
         assert pred1.metadata.time == expected_time
         assert pred2.metadata.time == expected_time
         assert pred1.metadata.rollout_step == i + 1
@@ -73,4 +86,6 @@ def test_rollout():
         if i == 0:
             assert np.allclose(pred1.surf_vars["2t"], pred2.surf_vars["2t"], rtol=1e-4)
         else:
-            assert not np.allclose(pred1.surf_vars["2t"], pred2.surf_vars["2t"], rtol=1e-4)
+            assert not np.allclose(
+                pred1.surf_vars["2t"], pred2.surf_vars["2t"], rtol=1e-4
+            )
