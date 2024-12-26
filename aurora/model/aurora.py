@@ -187,8 +187,8 @@ class Aurora(torch.nn.Module):
             :class:`Batch`: Prediction for the batch.
         """
         # Get the first parameter. We'll derive the data type and device from this parameter.
-        p = next(self.parameters())
-        batch = batch.type(p.dtype)
+        p = next(self.encoder.parameters())
+        batch = batch.type(p.dtype)  # type: ignore
         batch = batch.normalise(surf_stats=self.surf_stats)
         batch = batch.crop(patch_size=self.patch_size)
         batch = batch.to(p.device)
@@ -204,20 +204,35 @@ class Aurora(torch.nn.Module):
         B, T = next(iter(batch.surf_vars.values())).shape[:2]
         batch = dataclasses.replace(
             batch,
-            static_vars={k: v[None, None].repeat(B, T, 1, 1) for k, v in batch.static_vars.items()},
+            static_vars={
+                k: v[None, None].repeat(B, T, 1, 1)
+                for k, v in batch.static_vars.items()
+            },
         )
 
         x = self.encoder(
             batch,
             lead_time=self.timestep,
         )
-        with torch.autocast(device_type="cuda") if self.autocast else contextlib.nullcontext():
+
+        p = next(self.backbone.parameters())
+        x = x.to(p.device)
+        with (
+            torch.autocast(device_type="cuda")
+            if self.autocast
+            else contextlib.nullcontext()
+        ):
             x = self.backbone(
                 x,
                 lead_time=self.timestep,
                 patch_res=patch_res,
                 rollout_step=batch.metadata.rollout_step,
             )
+
+        p = next(self.decoder.parameters())
+        x = x.to(p.device)
+        batch = batch.to(p.device)
+
         pred = self.decoder(
             x,
             batch,
@@ -337,7 +352,9 @@ class Aurora(torch.nn.Module):
 
         self.load_state_dict(d, strict=strict)
 
-    def adapt_checkpoint_max_history_size(self, checkpoint: dict[str, torch.Tensor]) -> None:
+    def adapt_checkpoint_max_history_size(
+        self, checkpoint: dict[str, torch.Tensor]
+    ) -> None:
         """Adapt a checkpoint with smaller `max_history_size` to a model with a larger
         `max_history_size` than the current model.
 
@@ -364,7 +381,13 @@ class Aurora(torch.nn.Module):
 
                 # Initialize the new weight tensor.
                 new_weight = torch.zeros(
-                    (weight.shape[0], 1, self.max_history_size, weight.shape[3], weight.shape[4]),
+                    (
+                        weight.shape[0],
+                        1,
+                        self.max_history_size,
+                        weight.shape[3],
+                        weight.shape[4],
+                    ),
                     device=weight.device,
                     dtype=weight.dtype,
                 )
@@ -379,7 +402,9 @@ class Aurora(torch.nn.Module):
 
         This is required in order to compute gradients without running out of memory.
         """
-        apply_activation_checkpointing(self, check_fn=lambda x: isinstance(x, BasicLayer3D))
+        apply_activation_checkpointing(
+            self, check_fn=lambda x: isinstance(x, BasicLayer3D)
+        )
 
 
 AuroraSmall = partial(
