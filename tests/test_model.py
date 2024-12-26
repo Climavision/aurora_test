@@ -30,12 +30,10 @@ def _prepare_model_for_inference(model: Aurora) -> Aurora:
 
 @pytest.fixture(scope="session")
 def aurora_full() -> Aurora:
-    # model = AuroraSmall(use_lora=True)
     model = Aurora(use_lora=True)
     model.load_checkpoint(
         "microsoft/aurora",
         "aurora-0.25-finetuned.ckpt",
-        # strict=False,  # LoRA parameters not available.
     )
     return _prepare_model_for_inference(model)
 
