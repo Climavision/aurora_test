@@ -34,8 +34,8 @@ def aurora_full() -> Aurora:
     model = Aurora(use_lora=True)
     model.load_checkpoint(
         "microsoft/aurora",
-        "aurora-0.25-pretrained.ckpt",
-        strict=False,  # LoRA parameters not available.
+        "aurora-0.25-finetuned.ckpt",
+        # strict=False,  # LoRA parameters not available.
     )
     return _prepare_model_for_inference(model)
 
